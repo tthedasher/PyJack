@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""Blackjack - a small command-line card game.
+
+Run:  python3 blackjack.py
+
+Rules: get as close to 21 as you can without going over. Aces count as
+11 or 1, face cards count as 10. The dealer hits until reaching 17 or more.
+"""
+
+import os
+import random
+import sys
+from typing import List, NamedTuple
+
+# ---------- Terminal colours (ANSI) ----------
+
+RESET = "\033[0m"
+MAGENTA = "\033[35m"
+GREEN = "\033[32m"
+RED = "\033[31m"
+YELLOW = "\033[33m"
+
+
+def enable_ansi() -> None:
+    """Turn on ANSI colour support in the Windows console (no-op elsewhere)."""
+    if os.name == "nt":
+        os.system("")  # Side effect: enables virtual terminal processing.
+
+
+# ---------- Cards and hands ----------
+
+RANKS = ["", "Ace", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+         "Jack", "Queen", "King"]
+SUITS = ["Spades", "Hearts", "Diamonds", "Clubs"]
+
+
+class Card(NamedTuple):
+    rank: int  # 1 = Ace, 2-10, 11 = Jack, 12 = Queen, 13 = King
+    suit: int  # 0-3
+
+    def __str__(self) -> str:
+        return f"{RANKS[self.rank]} of {SUITS[self.suit]}"
+
+
+Hand = List[Card]
+
+
+def hand_value(hand: Hand) -> int:
+    """Best value of a hand: aces count as 11 until that would bust, then 1."""
+    total = 0
+    aces = 0
+    for card in hand:
+        if card.rank == 1:
+            aces += 1
+            total += 11
+        else:
+            total += min(card.rank, 10)
+    while total > 21 and aces > 0:
+        total -= 10
+        aces -= 1
+    return total
+
+
+# ---------- Deck ----------
+
+class Deck:
+    def __init__(self) -> None:
+        self._cards = [Card(rank, suit)
+                       for suit in range(4) for rank in range(1, 14)]
+        random.shuffle(self._cards)
+
+    def draw(self) -> Card:
+        return self._cards.pop()
+
+
+# ---------- Display and input ----------
+
+def show_hand(owner: str, hand: Hand, hide_second_card: bool = False) -> None:
+    print(f"{YELLOW}{owner}{RESET}:")
+    for i, card in enumerate(hand):
+        if hide_second_card and i == 1:
+            print("  [hidden card]")
+        else:
+            print(f"  {card}")
+    if not hide_second_card:
+        print(f"  Total: {hand_value(hand)}")
+
+
+def ask_yes_no(prompt: str) -> bool:
+    """Ask a yes/no question. Quits cleanly if input ends (Ctrl+D / Ctrl+C)."""
+    while True:
+        try:
+            answer = input(prompt).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\nThanks for playing!")
+            sys.exit(0)
+        if answer[:1] == "y":
+            return True
+        if answer[:1] == "n":
+            return False
+        print("Please answer y or n.")
+
+
+def say(colour: str, message: str) -> None:
+    print(f"{colour}{message}{RESET}")
+
+
+# ---------- Game logic ----------
+
+def play_round() -> None:
+    deck = Deck()
+    player: Hand = [deck.draw(), deck.draw()]
+    dealer: Hand = [deck.draw(), deck.draw()]
+
+    print()
+    show_hand("Your hand", player)
+    show_hand("Dealer's hand", dealer, hide_second_card=True)
+
+    # Naturals (21 on the first two cards) end the round immediately.
+    player_natural = hand_value(player) == 21
+    dealer_natural = hand_value(dealer) == 21
+    if player_natural or dealer_natural:
+        print()
+        show_hand("Dealer's hand", dealer)
+        if player_natural and dealer_natural:
+            say(YELLOW, "Both have blackjack. Push!")
+        elif player_natural:
+            say(GREEN, "Blackjack! You win!")
+        else:
+            say(RED, "Dealer has blackjack. You lose.")
+        return
+
+    # Player's turn: hit until they stand, hit 21, or bust.
+    while hand_value(player) < 21 and ask_yes_no("\nHit? (y/n): "):
+        player.append(deck.draw())
+        print(f"You drew: {player[-1]}")
+        show_hand("Your hand", player)
+
+    if hand_value(player) > 21:
+        say(RED, "\nYou busted. Dealer wins.")
+        return
+
+    # Dealer's turn: reveal, then hit until 17 or more.
+    print()
+    show_hand("Dealer's hand", dealer)
+    while hand_value(dealer) < 17:
+        dealer.append(deck.draw())
+        print(f"Dealer draws: {dealer[-1]}")
+
+    player_score = hand_value(player)
+    dealer_score = hand_value(dealer)
+    print(f"\nFinal - You: {player_score}, Dealer: {dealer_score}")
+
+    if dealer_score > 21:
+        say(GREEN, "Dealer busted. You win!")
+    elif player_score > dealer_score:
+        say(GREEN, "You win!")
+    elif player_score < dealer_score:
+        say(RED, "Dealer wins.")
+    else:
+        say(YELLOW, "Push - it's a tie.")
+
+
+def main() -> None:
+    enable_ansi()
+    print(f"{MAGENTA}=== Blackjack ==={RESET}")
+    print("Get as close to 21 as you can without going over.")
+
+    while True:
+        play_round()
+        if not ask_yes_no("\nPlay again? (y/n): "):
+            break
+
+    print("Thanks for playing!")
+
+
+if __name__ == "__main__":
+    main()
